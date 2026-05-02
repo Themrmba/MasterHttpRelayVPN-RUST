@@ -1,6 +1,5 @@
 name: Build Debug APK
 
-# این بخش اجازه میده دستی از تب Actions اجراش کنی
 on:
   workflow_dispatch:
 
@@ -27,8 +26,11 @@ jobs:
       - name: Install cargo-ndk
         run: cargo install cargo-ndk
 
+      - name: Install Android NDK (for cargo-ndk)
+        run: rustup target add armv7-linux-androideabi aarch64-linux-android i686-linux-android x86_64-linux-android
+
       - name: Build Rust native libraries
-        run: cd android && cargo ndk -t armeabi-v7a -t arm64-v8a -t x86 -t x86_64 -o app/src/main/jniLibs build --release
+        run: cargo ndk -t armeabi-v7a -t arm64-v8a -t x86 -t x86_64 -o android/app/src/main/jniLibs build --release
 
       - name: Build Android APK (debug)
         run: cd android && ./gradlew assembleDebug
