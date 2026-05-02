@@ -1,7 +1,7 @@
 name: Build Debug APK
 
 on:
-  workflow_dispatch:  # فقط با کلیک دستی اجرا بشه
+  workflow_dispatch:
 
 jobs:
   build:
@@ -18,16 +18,19 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Android SDK
+      - name: Setup Android SDK & NDK
+        id: sdk
         uses: android-actions/setup-android@v3
         with:
           packages: 'platforms;android-33 build-tools;33.0.2 ndk;23.1.7779620'
 
-      - name: Setup Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
+      - name: Create local.properties
+        run: |
+          echo "sdk.dir=${{ steps.sdk.outputs.sdk-path }}" > android/local.properties
+          echo "ndk.dir=${{ steps.sdk.outputs.ndk-path }}" >> android/local.properties
+
+      - name: Setup Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Install cargo-ndk
         run: cargo install cargo-ndk
@@ -40,6 +43,8 @@ jobs:
           rustup target add x86_64-linux-android
 
       - name: Build Rust native libraries
+        env:
+          ANDROID_NDK_HOME: ${{ steps.sdk.outputs.ndk-path }}
         run: |
           cargo ndk \
             -t armeabi-v7a \
@@ -49,7 +54,7 @@ jobs:
             -o android/app/src/main/jniLibs \
             build --release
 
-      - name: Grant execute permission to gradlew
+      - name: Grant gradlew execute permission
         run: chmod +x android/gradlew
 
       - name: Build APK (debug)
