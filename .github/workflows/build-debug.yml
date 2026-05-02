@@ -1,7 +1,7 @@
 name: Build Debug APK
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:  # فقط با کلیک دستی اجرا بشه
 
 jobs:
   build:
@@ -17,6 +17,11 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-33 build-tools;33.0.2 ndk;23.1.7779620'
 
       - name: Setup Rust
         uses: actions-rs/toolchain@v1
