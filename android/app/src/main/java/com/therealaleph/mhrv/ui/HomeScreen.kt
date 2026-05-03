@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.HourglassBottom
+import androidx.compose.material.ripple.rememberRipple   // <-- added
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -73,6 +74,12 @@ sealed class CaInstallOutcome {
     object Installed : CaInstallOutcome()
     data class NotInstalled(val downloadPath: String?) : CaInstallOutcome()
     data class Failed(val message: String) : CaInstallOutcome()
+}
+
+// probe result classification (used by parseProbeResult)
+sealed class ProbeState {
+    data class Ok(val latencyMs: Int) : ProbeState()
+    data class Err(val message: String) : ProbeState()
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -445,8 +452,3 @@ private fun parseProbeResult(json: String?): ProbeState {
         ProbeState.Err("bad json")
     }
 }
-
-// ========== توابع باقی‌مانده (بدون تغییر فقط برای جلوگیری از خطا) ==========
-
-// بقیهٔ کلاس‌ها و توابعی که حذف نشدن می‌تونن اینجا بمونن
-// اما اگه خواستی حجم فایل کمتر بشه، همه کامنت‌ها و کدهای unused رو هم حذف کن.
