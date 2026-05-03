@@ -157,6 +157,11 @@ fun HomeScreen(
     }
 
     Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("MoozRely") },
+            )
+        },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { inner ->
         Column(
@@ -164,10 +169,16 @@ fun HomeScreen(
                 .padding(inner)
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(16.dp),
+                .padding(18.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            // نوار اشتراک‌گذاری کانفیگ (اختیاری – می‌تونی حذفش کنی)
+            ConfigSharingBar(
+                cfg = cfg,
+                onImport = { persist(it) },
+                onSnackbar = { snackbar.showSnackbar(it) },
+            )
 
             Spacer(Modifier.height(32.dp))
 
@@ -216,7 +227,7 @@ fun HomeScreen(
                 Text("…", style = MaterialTheme.typography.titleMedium)
             } else {
                 Text(
-                    if (isVpnRunning) "Connected" else "Disconnected",
+                    if (isVpnRunning) "Connected" else "Disconected",
                     style = MaterialTheme.typography.titleMedium,
                     color = if (isVpnRunning) OkGreen else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -338,7 +349,7 @@ private fun CircularConnectButton(
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = if (isRunning) "قطع" else "اتصال",
+                    text = if (isRunning) "Disconnect" else "Connect",
                     color = Color.White,
                     style = MaterialTheme.typography.labelLarge,
                 )
