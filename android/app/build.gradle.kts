@@ -12,19 +12,11 @@ android {
 
     defaultConfig {
         applicationId = "com.therealaleph.mhrv"
-        minSdk = 24 // Android 7.0 — covers 99%+ of live devices.
+        minSdk = 24
         targetSdk = 34
         versionCode = 158
         versionName = "1.8.1"
 
-        // Ship all four mainstream Android ABIs:
-        //   - arm64-v8a      — 95%+ of real-world Android phones since 2019
-        //   - armeabi-v7a    — older/cheaper devices still on 32-bit ARM
-        //   - x86_64         — Android emulator on Intel Macs + Chromebooks
-        //   - x86            — legacy 32-bit Intel emulator; cheap to include
-        // Per-ABI .so files push the APK up to ~50 MB, but users expect one
-        // APK that Just Works rather than "pick the right ABI" which nobody
-        // does correctly. Google Play would auto-split; we ship universal.
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
         }
@@ -32,22 +24,6 @@ android {
 
     signingConfigs {
         create("release") {
-            // Committed keystore — fixed signature across machines and
-            // across CI runs. Using the auto-generated debug keystore
-            // (as v1.0.0 / v1.0.1 did) makes every release APK fail to
-            // install over the previous one with
-            // INSTALL_FAILED_UPDATE_INCOMPATIBLE, because Android treats
-            // a signature change as "different app": the user has to
-            // uninstall first. That's awful UX.
-            //
-            // The password is in plaintext because this is an
-            // open-source project without Play Store identity. A
-            // forked/rebuilt APK signed with a different key is
-            // fundamentally a different install path anyway — the
-            // protection model here is "trust the source tree you
-            // pulled from," not "trust that we hold a key you can't
-            // see." If you're forking, generate your own key, commit
-            // it, and ship.
             storeFile = file("release.jks")
             storePassword = "mhrv-rs-release"
             keyAlias = "mhrv-rs"
@@ -66,19 +42,6 @@ android {
         }
     }
 
-    // Per-ABI APK splits in addition to the universal APK.
-    //
-    // Issue #136: GitHub Releases is filtered from inside IR, and the
-    // universal APK (~50 MB, all four ABIs bundled) is the bottleneck —
-    // users on slow or unstable censorship-tunnel paths often can't
-    // pull down 50 MB reliably. Per-ABI APKs are ~15 MB each (only one
-    // copy of libmhrv_rs.so + libtun2proxy.so instead of four), which
-    // is small enough to succeed where the universal fails.
-    //
-    // Keeping the universal APK too (`isUniversalApk = true`) because
-    // existing download paths / docs / Telegram mirrors all reference
-    // the universal name — removing it would break every link in the
-    // wild. The per-ABI outputs are additive.
     splits {
         abi {
             isEnable = true
@@ -102,9 +65,6 @@ android {
         buildConfig = true
     }
 
-    // libmhrv_rs.so is produced by `cargo ndk` in the repo root and dropped
-    // under app/src/main/jniLibs/<abi>/. The cargoBuild task below runs
-    // that before each assembleDebug / assembleRelease.
     sourceSets["main"].jniLibs.srcDirs("src/main/jniLibs")
 
     packaging {
@@ -124,9 +84,6 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.2")
-    // AppCompatDelegate.setApplicationLocales is the only thing we need
-    // out of AppCompat — lets us flip the whole app locale at runtime
-    // from MhrvApp.onCreate without touching every composable.
     implementation("androidx.appcompat:appcompat:1.7.0")
 
     // Compose UI.
@@ -136,7 +93,10 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
 
-    // QR code generation + scanning (self-contained, no ML Kit needed).
+    // Ripple indication (needed for rememberRipple)
+    implementation("androidx.compose.material:material-ripple")
+
+    // QR code generation + scanning
     implementation("com.google.zxing:core:3.5.3")
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
 
@@ -144,24 +104,10 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
 
-// --------------------------------------------------------------------------
-// Cross-compile the Rust crate to arm64 Android and drop the .so into the
-// place Android's packager looks. We hand the work off to `cargo ndk` which
-// wraps the right CC / AR / linker env vars for us.
-//
-// This ties to the `assemble*` task so every debug/release build triggers
-// a `cargo ndk` — no manual step. In CI we'd cache the target/ dir to
-// avoid full rebuilds.
-// --------------------------------------------------------------------------
+// Rust cross-compile tasks
 val rustCrateDir = rootProject.projectDir.parentFile
 val jniLibsDir = file("src/main/jniLibs")
 
-// After cargo-ndk dumps artifacts into each jniLibs/<abi>/ dir, the
-// tun2proxy cdylib lands as `libtun2proxy-<hash>.so` (rustc's deps/ naming
-// convention, because tun2proxy is a transitive dep not a root crate).
-// Android's System.loadLibrary expects a stable name, and the hash changes
-// between builds, so we normalize it to `libtun2proxy.so` in every ABI dir.
-// Also deletes any stale hash-suffixed copies from previous builds.
 fun normalizeTun2proxySo() {
     val jniLibsRoot = file("src/main/jniLibs")
     if (!jniLibsRoot.isDirectory) return
@@ -178,19 +124,10 @@ fun normalizeTun2proxySo() {
     }
 }
 
-// All ABIs we ship. Keep in sync with `android.defaultConfig.ndk.abiFilters`
-// above; if these drift, the APK either includes .so files with no matching
-// ABI entry (dead weight) or advertises ABIs with no .so (runtime
-// UnsatisfiedLinkError on devices that pick that split).
 val androidAbis = listOf("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
 
 tasks.register<Exec>("cargoBuildDebug") {
     group = "build"
-    // Intentionally ALWAYS uses --release. The Rust debug build is 80+MB
-    // of unoptimized object code vs 3MB with release; the 20x APK bloat is
-    // never worth it just for a Rust stack trace you wouldn't see in
-    // logcat anyway. If you need Rust debug symbols, temporarily drop
-    // `--release` below and accept the APK size.
     description = "Cross-compile mhrv_rs for all ABIs (release — same as cargoBuildRelease)"
     workingDir = rustCrateDir
     commandLine(buildList<String> {
@@ -215,7 +152,6 @@ tasks.register<Exec>("cargoBuildRelease") {
     doLast { normalizeTun2proxySo() }
 }
 
-// Hook the right cargo task in front of each Android build variant.
 tasks.configureEach {
     when (name) {
         "mergeDebugJniLibFolders" -> dependsOn("cargoBuildDebug")
