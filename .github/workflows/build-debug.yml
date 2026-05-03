@@ -235,8 +235,6 @@ jobs:
   android:
     runs-on: ubuntu-latest
     env:
-      # این مقادیر بعد از setup-android بازنویسی می‌شوند،
-      # ولی برای اطمینان اینجا پیش‌فرض را می‌گذاریم
       ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
       ANDROID_HOME: ${{ github.workspace }}/android-sdk
     steps:
@@ -248,17 +246,19 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      # عملگر setup-android همهٔ بارگذاری SDK/NDK و کشینگ را انجام می‌دهد
       - name: Setup Android SDK and NDK
         id: android-sdk
         uses: android-actions/setup-android@v3
         with:
           packages: 'platforms;android-34 build-tools;34.0.0 ndk;26.2.11394342'
-          # کش کردن در سطح runner فعال است، لازم نیست جدا cache کنیم
 
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
+
+      # cargo-ndk is needed by the Gradle task `cargoBuildRelease`
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -267,7 +267,6 @@ jobs:
           workspaces: |
             . -> target
 
-      # برای اطمینان local.properties را با مسیر SDK می‌سازیم
       - name: Set up local.properties
         run: |
           echo "sdk.dir=${ANDROID_SDK_ROOT}" > ./android/local.properties
