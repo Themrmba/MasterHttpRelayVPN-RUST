@@ -8,90 +8,63 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
-/**
- * Visual theme tuned to match the desktop `mhrv-rs-ui` eframe UI pixel-for-pixel
- * where Compose semantics allow. The canonical source lives in `src/bin/ui.rs`
- * — these constants are the same `egui::Color32` values, re-expressed as
- * `Color(0xAARRGGBB)`. If you change a value here and not there (or vice
- * versa) the two builds will drift visibly.
- *
- * Deliberate choices:
- *   - ALWAYS dark. The desktop UI is always dark (`egui::Visuals::dark()`),
- *     so Android follows. Neither light mode nor Android 12+ dynamic color
- *     is respected — matching the desktop trumps blending with the user's
- *     wallpaper here.
- *   - Card corners 6.dp, button corners 4.dp, matching the eframe
- *     `.rounding(6.0)` / `.rounding(4.0)` pairs in the desktop code.
- */
+// ---------- رنگ‌های نئونی ----------
+val NeonCyan       = Color(0xFF00E5FF)
+val NeonMagenta    = Color(0xFFFF007F)
+val NeonPurple     = Color(0xFFB000FF)
+val NeonGreen      = Color(0xFF39FF14)
 
-// Exact palette from src/bin/ui.rs (line 508+).
-// ACCENT / ACCENT_HOVER
-val AccentBlue = Color(0xFF4678B4)
-val AccentHover = Color(0xFF5A91CD)
-// OK_GREEN / ERR_RED
-val OkGreen = Color(0xFF50B464)
-val ErrRed = Color(0xFFDC6E6E)
+// ---------- پس‌زمینه‌های تیره ----------
+val DarkBg         = Color(0xFF0A0A0A)
+val DarkSurface    = Color(0xFF121212)
+val DarkCard       = Color(0xFF1E1E1E)
+val DarkBorder     = Color(0xFF2C2C2C)
 
-// Card fill and stroke used by section containers in the desktop UI.
-val CardFill = Color(0xFF1C1E22)
-val CardStroke = Color(0xFF32363C)
+private val NeonDarkScheme = darkColorScheme(
+    primary              = NeonCyan,
+    onPrimary            = Color.Black,
+    primaryContainer     = NeonCyan.copy(alpha = 0.12f),
+    onPrimaryContainer   = NeonCyan,
 
-// Backdrop slightly darker than cards so containers pop off the page —
-// egui's default dark background sits right around this value.
-val BgDark = Color(0xFF111317)
+    secondary            = NeonMagenta,
+    onSecondary          = Color.Black,
+    secondaryContainer   = NeonMagenta.copy(alpha = 0.12f),
+    onSecondaryContainer = NeonMagenta,
 
-// Text shades — `egui::Color32::from_gray(200)` etc.
-val TextPrimary = Color(0xFFC8C8C8)
-val TextSecondary = Color(0xFF8C8C8C)
-val TextLabel = Color(0xFFB4B4B4)
+    tertiary             = NeonPurple,
+    onTertiary           = Color.White,
+    tertiaryContainer    = NeonPurple.copy(alpha = 0.12f),
+    onTertiaryContainer  = NeonPurple,
 
-private val MhrvDark = darkColorScheme(
-    primary = AccentBlue,
-    onPrimary = Color.White,
-    primaryContainer = AccentHover,
-    onPrimaryContainer = Color.White,
+    error                = Color(0xFFFF5252),
+    onError              = Color.Black,
 
-    secondary = OkGreen,
-    onSecondary = Color.Black,
+    background           = DarkBg,
+    onBackground         = Color(0xFFE0E0E0),
 
-    tertiary = OkGreen,
-    onTertiary = Color.Black,
+    surface              = DarkSurface,
+    onSurface            = Color(0xFFE0E0E0),
 
-    error = ErrRed,
-    onError = Color.White,
+    surfaceVariant       = DarkCard,
+    onSurfaceVariant     = Color(0xFFB0B0B0),
 
-    background = BgDark,
-    onBackground = TextPrimary,
-
-    surface = CardFill,
-    onSurface = TextPrimary,
-
-    surfaceVariant = CardFill,
-    onSurfaceVariant = TextSecondary,
-
-    outline = CardStroke,
-    outlineVariant = CardStroke,
+    outline              = DarkBorder,
+    outlineVariant       = DarkBorder,
 )
 
-/**
- * Material3 consumes Shapes through component defaults (Button uses
- * `shapes.full`, Card uses `shapes.medium`, etc.). Mapping every size to
- * tight rounded-rectangles keeps the whole app visually consistent with
- * the desktop's squared-off controls instead of Material's default pills.
- */
-private val MhrvShapes = Shapes(
-    extraSmall = RoundedCornerShape(4.dp),
-    small = RoundedCornerShape(4.dp),
-    medium = RoundedCornerShape(6.dp),
-    large = RoundedCornerShape(6.dp),
-    extraLarge = RoundedCornerShape(8.dp),
+private val NeonShapes = Shapes(
+    extraSmall = RoundedCornerShape(8.dp),
+    small      = RoundedCornerShape(8.dp),
+    medium     = RoundedCornerShape(12.dp),
+    large      = RoundedCornerShape(16.dp),
+    extraLarge = RoundedCornerShape(24.dp),
 )
 
 @Composable
 fun MhrvTheme(content: @Composable () -> Unit) {
     MaterialTheme(
-        colorScheme = MhrvDark,
-        shapes = MhrvShapes,
-        content = content,
+        colorScheme = NeonDarkScheme,
+        shapes      = NeonShapes,
+        content     = content,
     )
 }
