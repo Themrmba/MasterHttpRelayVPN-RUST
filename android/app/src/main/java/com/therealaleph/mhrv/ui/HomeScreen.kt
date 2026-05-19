@@ -1,6 +1,8 @@
 package com.therealaleph.mhrv.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -13,6 +15,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -28,9 +31,9 @@ import com.therealaleph.mhrv.NetworkDetect
 import com.therealaleph.mhrv.R
 import com.therealaleph.mhrv.UiLang
 import com.therealaleph.mhrv.VpnState
-import com.therealaleph.mhrv.ui.theme.NeonCyan
 import com.therealaleph.mhrv.ui.theme.NeonGreen
 import com.therealaleph.mhrv.ui.theme.NeonMagenta
+import com.therealaleph.mhrv.ui.theme.NeonCyan
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -39,7 +42,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 
-// (CaInstallOutcome sealed class بدون تغییر)
 sealed class CaInstallOutcome {
     object Installed : CaInstallOutcome()
     data class NotInstalled(val downloadPath: String?) : CaInstallOutcome()
@@ -68,7 +70,6 @@ fun HomeScreen(
 
     var showInstallDialog by rememberSaveable { mutableStateOf(false) }
 
-    // گیت انتقال وضعیت سرویس
     var awaitingRunning by remember { mutableStateOf<Boolean?>(null) }
     val transitioning = awaitingRunning != null
     LaunchedEffect(awaitingRunning) {
@@ -110,7 +111,6 @@ fun HomeScreen(
             TopAppBar(title = { Text("Nice Relay") })
         },
         snackbarHost = { SnackbarHost(snackbar) }
-        // بدون FAB – دکمه‌ی Follow Channel در خود ستون قرار می‌گیرد
     ) { inner ->
         Column(
             modifier = Modifier
@@ -118,12 +118,12 @@ fun HomeScreen(
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 12.dp)
-                .navigationBarsPadding()   // فاصله از نوار پایین سیستم
+                .navigationBarsPadding()
                 .imePadding(),
             verticalArrangement = Arrangement.spacedBy(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // ۱. دکمه‌ی نصب CA (همان ظاهر قبلی)
+            // ۱. دکمه‌ی نصب CA
             FilledTonalButton(
                 onClick = { showInstallDialog = true },
                 modifier = Modifier.fillMaxWidth()
@@ -138,46 +138,48 @@ fun HomeScreen(
                 onSnackbar = { snackbar.showSnackbar(it) }
             )
 
-            // ۳. دکمه‌ی اتصال دایره‌ای (Power)
+            // ۳. دکمه‌ی Connect دایره‌ای (جایگزین FAB با Button)
             val isVpnRunning by VpnState.isRunning.collectAsState()
-            FloatingActionButton(
-                onClick = {
-                    if (isVpnRunning) {
-                        awaitingRunning = false
-                        onStop()
-                    } else {
-                        awaitingRunning = true
-                        scope.launch {
-                            var updated = cfg
-                            if (updated.googleIp.isBlank()) {
-                                val fresh = withContext(Dispatchers.IO) {
-                                    NetworkDetect.resolveGoogleIp()
-                                }
-                                if (!fresh.isNullOrBlank()) updated = updated.copy(googleIp = fresh)
-                            }
-                            if (updated.frontDomain.isBlank() ||
-                                updated.frontDomain.parseAsIpOrNull() != null
-                            ) {
-                                updated = updated.copy(frontDomain = "www.google.com")
-                            }
-                            if (updated !== cfg) persist(updated)
-                            onStart()
-                        }
-                    }
-                },
-                enabled = (isVpnRunning ||
-                        cfg.mode == Mode.DIRECT ||
-                        (cfg.hasDeploymentId && cfg.authKey.isNotBlank())) && !transitioning,
-                containerColor = if (isVpnRunning) Color(0xFFFF5252) else NeonGreen,
-                contentColor = Color.Black,
-                shape = CircleShape,
+            val connectEnabled = (isVpnRunning ||
+                    cfg.mode == Mode.DIRECT ||
+                    (cfg.hasDeploymentId && cfg.authKey.isNotBlank())) && !transitioning
+
+            Box(
                 modifier = Modifier
                     .size(88.dp)
                     .shadow(12.dp, CircleShape, spotColor = NeonGreen, ambientColor = NeonGreen)
+                    .clip(CircleShape)
+                    .background(if (isVpnRunning) Color(0xFFFF5252) else NeonGreen)
+                    .clickable(enabled = connectEnabled) {
+                        if (isVpnRunning) {
+                            awaitingRunning = false
+                            onStop()
+                        } else {
+                            awaitingRunning = true
+                            scope.launch {
+                                var updated = cfg
+                                if (updated.googleIp.isBlank()) {
+                                    val fresh = withContext(Dispatchers.IO) {
+                                        NetworkDetect.resolveGoogleIp()
+                                    }
+                                    if (!fresh.isNullOrBlank()) updated = updated.copy(googleIp = fresh)
+                                }
+                                if (updated.frontDomain.isBlank() ||
+                                    updated.frontDomain.parseAsIpOrNull() != null
+                                ) {
+                                    updated = updated.copy(frontDomain = "www.google.com")
+                                }
+                                if (updated !== cfg) persist(updated)
+                                onStart()
+                            }
+                        }
+                    },
+                contentAlignment = Alignment.Center
             ) {
                 Icon(
                     Icons.Default.PowerSettingsNew,
                     contentDescription = if (isVpnRunning) "Disconnect" else "Connect",
+                    tint = Color.Black,
                     modifier = Modifier.size(42.dp)
                 )
             }
@@ -273,7 +275,7 @@ fun HomeScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 24.dp, vertical = 16.dp)
-                    .navigationBarsPadding(),   // فاصله از نوار ناوبری
+                    .navigationBarsPadding(),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
@@ -303,7 +305,6 @@ fun HomeScreen(
     }
 }
 
-// تابع کمکی برای تشخیص IP (بدون تغییر)
 private fun String.parseAsIpOrNull(): java.net.InetAddress? {
     val s = trim()
     if (s.isEmpty() || s.any { it.isLetter() }) return null
