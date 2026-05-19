@@ -1,7 +1,5 @@
 package com.therealaleph.mhrv.ui
 
-import android.widget.Toast
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -9,7 +7,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -41,6 +39,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 
+// (CaInstallOutcome sealed class بدون تغییر)
 sealed class CaInstallOutcome {
     object Installed : CaInstallOutcome()
     data class NotInstalled(val downloadPath: String?) : CaInstallOutcome()
@@ -69,7 +68,7 @@ fun HomeScreen(
 
     var showInstallDialog by rememberSaveable { mutableStateOf(false) }
 
-    // دروازه‌ی Start/Stop بر اساس وضعیت واقعی سرویس
+    // گیت انتقال وضعیت سرویس
     var awaitingRunning by remember { mutableStateOf<Boolean?>(null) }
     val transitioning = awaitingRunning != null
     LaunchedEffect(awaitingRunning) {
@@ -102,53 +101,46 @@ fun HomeScreen(
         onCaOutcomeConsumed()
     }
 
-    // وضعیت BottomSheet
+    // BottomSheet
     val sheetState = rememberModalBottomSheetState()
     var showSheet by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("mhrv-rs") })
+            TopAppBar(title = { Text("Nice Relay") })
         },
-        snackbarHost = { SnackbarHost(snackbar) },
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = { showSheet = true },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-                shape = CircleShape,
-                modifier = Modifier
-                    .shadow(
-                        elevation = 16.dp,
-                        shape = CircleShape,
-                        ambientColor = MaterialTheme.colorScheme.primary,
-                        spotColor = MaterialTheme.colorScheme.primary
-                    )
-                    .border(2.dp, Color.White, CircleShape)
-            ) {
-                Icon(Icons.Default.PlayArrow, contentDescription = "Open")
-            }
-        },
-        floatingActionButtonPosition = FabPosition.Center
+        snackbarHost = { SnackbarHost(snackbar) }
+        // بدون FAB – دکمه‌ی Follow Channel در خود ستون قرار می‌گیرد
     ) { inner ->
         Column(
             modifier = Modifier
                 .padding(inner)
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .navigationBarsPadding()   // فاصله از نوار پایین سیستم
+                .imePadding(),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // ۱. ایمپورت / اکسپورت کانفیگ
+            // ۱. دکمه‌ی نصب CA (همان ظاهر قبلی)
+            FilledTonalButton(
+                onClick = { showInstallDialog = true },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(stringResource(R.string.btn_install_mitm))
+            }
+
+            // ۲. نوار ایمپورت/اکسپورت کانفیگ
             ConfigSharingBar(
                 cfg = cfg,
                 onImport = { persist(it) },
                 onSnackbar = { snackbar.showSnackbar(it) }
             )
 
-            // ۲. دکمه‌ی Connect / Disconnect
+            // ۳. دکمه‌ی اتصال دایره‌ای (Power)
             val isVpnRunning by VpnState.isRunning.collectAsState()
-            Button(
+            FloatingActionButton(
                 onClick = {
                     if (isVpnRunning) {
                         awaitingRunning = false
@@ -176,34 +168,40 @@ fun HomeScreen(
                 enabled = (isVpnRunning ||
                         cfg.mode == Mode.DIRECT ||
                         (cfg.hasDeploymentId && cfg.authKey.isNotBlank())) && !transitioning,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isVpnRunning) Color(0xFFFF5252) else NeonGreen,
-                    contentColor = Color.Black,
-                    disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant
-                ),
-                modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)
+                containerColor = if (isVpnRunning) Color(0xFFFF5252) else NeonGreen,
+                contentColor = Color.Black,
+                shape = CircleShape,
+                modifier = Modifier
+                    .size(88.dp)
+                    .shadow(12.dp, CircleShape, spotColor = NeonGreen, ambientColor = NeonGreen)
             ) {
-                Text(
-                    when {
-                        transitioning -> "…"
-                        isVpnRunning -> stringResource(R.string.btn_disconnect)
-                        else -> stringResource(R.string.btn_connect)
-                    },
-                    style = MaterialTheme.typography.titleMedium
+                Icon(
+                    Icons.Default.PowerSettingsNew,
+                    contentDescription = if (isVpnRunning) "Disconnect" else "Connect",
+                    modifier = Modifier.size(42.dp)
                 )
             }
 
-            // ۳. دکمه‌ی نصب CA
-            FilledTonalButton(
-                onClick = { showInstallDialog = true },
-                modifier = Modifier.fillMaxWidth()
+            // ۴. نوار Follow Channel (نئونی)
+            Button(
+                onClick = { showSheet = true },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = NeonCyan,
+                    contentColor = Color.Black
+                ),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+                    .border(2.dp, Color.White, RoundedCornerShape(12.dp))
+                    .shadow(8.dp, RoundedCornerShape(12.dp), spotColor = NeonCyan)
             ) {
-                Text(stringResource(R.string.btn_install_mitm))
+                Text("Follow Channel", style = MaterialTheme.typography.labelLarge)
             }
         }
     }
 
-    // دیالوگ نصب CA (بدون تغییر)
+    // ---------- دیالوگ نصب CA ----------
     if (showInstallDialog) {
         val exported = remember { CaInstall.export(ctx) }
         val fp = remember(exported) { if (exported) CaInstall.fingerprint(ctx) else null }
@@ -262,7 +260,7 @@ fun HomeScreen(
         )
     }
 
-    // برگه‌ی کشویی پایین با گوشه‌های بالای گرد
+    // ---------- برگه‌ی کشویی Follow Channel ----------
     if (showSheet) {
         ModalBottomSheet(
             onDismissRequest = { showSheet = false },
@@ -274,11 +272,12 @@ fun HomeScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 16.dp),
+                    .padding(horizontal = 24.dp, vertical = 16.dp)
+                    .navigationBarsPadding(),   // فاصله از نوار ناوبری
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text("mhrv-rs", style = MaterialTheme.typography.titleMedium)
+                Text("Nice Relay", style = MaterialTheme.typography.titleMedium)
                 Button(
                     onClick = {
                         val intent = android.content.Intent(
@@ -289,7 +288,7 @@ fun HomeScreen(
                         runCatching { ctx.startActivity(intent) }
                     },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.secondary,   // NeonMagenta
+                        containerColor = MaterialTheme.colorScheme.secondary,
                         contentColor = MaterialTheme.colorScheme.onSecondary
                     ),
                     modifier = Modifier
@@ -304,9 +303,7 @@ fun HomeScreen(
     }
 }
 
-// ========================================================
-//  تابع کمکی برای تشخیص IP (دست‌نخورده از نسخه‌ی اصلی)
-// ========================================================
+// تابع کمکی برای تشخیص IP (بدون تغییر)
 private fun String.parseAsIpOrNull(): java.net.InetAddress? {
     val s = trim()
     if (s.isEmpty() || s.any { it.isLetter() }) return null
