@@ -4,10 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material3.*
@@ -115,20 +113,23 @@ fun HomeScreen(
             modifier = Modifier
                 .padding(inner)
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .padding(horizontal = 16.dp)
                 .navigationBarsPadding()
                 .imePadding(),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.Top,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // ۱. دکمه‌ی نصب CA
             FilledTonalButton(
                 onClick = { showInstallDialog = true },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp)
             ) {
                 Text(stringResource(R.string.btn_install_mitm))
             }
+
+            Spacer(modifier = Modifier.height(12.dp))
 
             // ۲. نوار ایمپورت/اکسپورت کانفیگ
             ConfigSharingBar(
@@ -137,13 +138,15 @@ fun HomeScreen(
                 onSnackbar = { snackbar.showSnackbar(it) }
             )
 
-            // ۳. دکمه‌ی Connect دایره‌ای
+            // فضای خالی برای هل دادن دکمه‌ی اتصال به مرکز عمودی
+            Spacer(modifier = Modifier.weight(1f))
+
+            // ۳. دکمه‌ی Connect بزرگ و مرکز
             val isVpnRunning by VpnState.isRunning.collectAsState()
             val connectEnabled = (isVpnRunning ||
                     cfg.mode == Mode.DIRECT ||
                     (cfg.hasDeploymentId && cfg.authKey.isNotBlank())) && !transitioning
 
-            // روش بدون پارامتر enabled در clickable
             val connectModifier = if (connectEnabled) {
                 Modifier.clickable {
                     if (isVpnRunning) {
@@ -175,8 +178,8 @@ fun HomeScreen(
 
             Box(
                 modifier = Modifier
-                    .size(88.dp)
-                    .shadow(12.dp, CircleShape, spotColor = NeonGreen, ambientColor = NeonGreen)
+                    .size(110.dp)
+                    .shadow(16.dp, CircleShape, spotColor = NeonGreen, ambientColor = NeonGreen)
                     .clip(CircleShape)
                     .background(if (isVpnRunning) Color(0xFFFF5252) else NeonGreen)
                     .then(connectModifier),
@@ -186,11 +189,14 @@ fun HomeScreen(
                     Icons.Default.PowerSettingsNew,
                     contentDescription = if (isVpnRunning) "Disconnect" else "Connect",
                     tint = Color.Black,
-                    modifier = Modifier.size(42.dp)
+                    modifier = Modifier.size(52.dp)
                 )
             }
 
-            // ۴. نوار Follow Channel
+            // فضای خالی پایین دکمه تا دکمه‌ی Follow
+            Spacer(modifier = Modifier.weight(1f))
+
+            // ۴. دکمه‌ی باز کردن برگه‌ی Follow
             Button(
                 onClick = { showSheet = true },
                 colors = ButtonDefaults.buttonColors(
@@ -200,16 +206,90 @@ fun HomeScreen(
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp)
+                    .height(48.dp)
                     .border(2.dp, Color.White, RoundedCornerShape(12.dp))
                     .shadow(8.dp, RoundedCornerShape(12.dp), spotColor = NeonCyan)
             ) {
-                Text("Follow Channel", style = MaterialTheme.typography.labelLarge)
+                Text("Follow", style = MaterialTheme.typography.labelLarge)
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+    }
+
+    // ---------- برگه‌ی کشویی Follow ----------
+    if (showSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showSheet = false },
+            sheetState = sheetState,
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 0.dp, bottomEnd = 0.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 16.dp)
+                    .navigationBarsPadding(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text("Follow", style = MaterialTheme.typography.titleMedium)
+
+                // دکمه‌ی Follow Us (تلگرام)
+                Button(
+                    onClick = {
+                        val intent = android.content.Intent(
+                            android.content.Intent.ACTION_VIEW,
+                            android.net.Uri.parse("https://t.me/TheNiceGateWay")
+                        )
+                        intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                        runCatching { ctx.startActivity(intent) }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = NeonCyan,
+                        contentColor = Color.Black
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .border(2.dp, Color.White, RoundedCornerShape(12.dp))
+                        .shadow(6.dp, RoundedCornerShape(12.dp), spotColor = NeonCyan)
+                ) {
+                    Text("Follow Us", style = MaterialTheme.typography.labelLarge)
+                }
+
+                // دکمه‌ی Follow on Super App (روبیکا)
+                Button(
+                    onClick = {
+                        val intent = android.content.Intent(
+                            android.content.Intent.ACTION_VIEW,
+                            android.net.Uri.parse(
+                                "https://rubika.ir/joing/+BAHDFHDGD0JFFNTDEECCGZOADAANTXCW"
+                            )
+                        )
+                        intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                        runCatching { ctx.startActivity(intent) }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = NeonMagenta,
+                        contentColor = Color.Black
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .border(2.dp, Color.White, RoundedCornerShape(12.dp))
+                        .shadow(6.dp, RoundedCornerShape(12.dp), spotColor = NeonMagenta)
+                ) {
+                    Text("Follow on Super App", style = MaterialTheme.typography.labelLarge)
+                }
             }
         }
     }
 
-    // دیالوگ نصب CA
+    // ---------- دیالوگ نصب CA ----------
     if (showInstallDialog) {
         val exported = remember { CaInstall.export(ctx) }
         val fp = remember(exported) { if (exported) CaInstall.fingerprint(ctx) else null }
@@ -266,48 +346,6 @@ fun HomeScreen(
                 TextButton(onClick = { showInstallDialog = false }) { Text("Cancel") }
             }
         )
-    }
-
-    // برگه‌ی کشویی
-    if (showSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showSheet = false },
-            sheetState = sheetState,
-            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 0.dp, bottomEnd = 0.dp),
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 16.dp)
-                    .navigationBarsPadding(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text("Nice Relay", style = MaterialTheme.typography.titleMedium)
-                Button(
-                    onClick = {
-                        val intent = android.content.Intent(
-                            android.content.Intent.ACTION_VIEW,
-                            android.net.Uri.parse("https://t.me/BHBadGateWay")
-                        )
-                        intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                        runCatching { ctx.startActivity(intent) }
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.secondary,
-                        contentColor = MaterialTheme.colorScheme.onSecondary
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .border(2.dp, MaterialTheme.colorScheme.secondary, RoundedCornerShape(12.dp))
-                        .shadow(8.dp, RoundedCornerShape(12.dp), spotColor = MaterialTheme.colorScheme.secondary)
-                ) {
-                    Text("Follow Channel", style = MaterialTheme.typography.labelLarge)
-                }
-            }
-        }
     }
 }
 
