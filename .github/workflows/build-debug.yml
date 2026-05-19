@@ -1,0 +1,505 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Existing release tag to upload to (without the leading v). Example: 1.4.0'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  packages: write
+
+# All jobs on GitHub-hosted runners
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            name: mhrv-rs-linux-amd64
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            name: mhrv-rs-linux-arm64
+          - target: arm-unknown-linux-gnueabihf
+            os: ubuntu-latest
+            name: mhrv-rs-raspbian-armhf
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            name: mhrv-rs-macos-amd64
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            name: mhrv-rs-macos-arm64
+          - target: x86_64-pc-windows-gnu
+            os: windows-latest
+            name: mhrv-rs-windows-amd64
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            name: mhrv-rs-linux-musl-amd64
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
+            name: mhrv-rs-linux-musl-arm64
+          - target: mipsel-unknown-linux-musl
+            os: ubuntu-latest
+            name: mhrv-rs-openwrt-mipsel-softfloat
+            mipsel_softfloat: true
+
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.mipsel_softfloat == true }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@master
+        if: matrix.mipsel_softfloat != true
+        with:
+          toolchain: ${{ matrix.rust_toolchain || 'stable' }}
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        if: matrix.mipsel_softfloat != true
+        with:
+          key: ${{ matrix.target }}-${{ matrix.rust_toolchain || 'stable' }}
+          cache-bin: "false"
+
+      - name: Install Linux eframe system deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libxkbcommon-dev \
+            libwayland-dev \
+            libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            libx11-dev \
+            libgl1-mesa-dev libglib2.0-dev libgtk-3-dev
+
+      - name: Install aarch64 cross-compile toolchain (Linux only)
+        if: runner.os == 'Linux' && matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          echo '[target.aarch64-unknown-linux-gnu]' >> ~/.cargo/config.toml
+          echo 'linker = "aarch64-linux-gnu-gcc"' >> ~/.cargo/config.toml
+
+      - name: Install armhf cross-compile toolchain (Linux only)
+        if: runner.os == 'Linux' && matrix.target == 'arm-unknown-linux-gnueabihf'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-linux-gnueabihf
+          echo '[target.arm-unknown-linux-gnueabihf]' >> ~/.cargo/config.toml
+          echo 'linker = "arm-linux-gnueabihf-gcc"' >> ~/.cargo/config.toml
+
+      - name: Install Windows MinGW toolchain
+        if: matrix.target == 'x86_64-pc-windows-gnu'
+        id: msys2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: mingw-w64-x86_64-gcc
+
+      - name: Configure Windows GNU linker
+        if: matrix.target == 'x86_64-pc-windows-gnu'
+        shell: pwsh
+        run: |
+          $gcc = "${{ steps.msys2.outputs.msys2-location }}\mingw64\bin\gcc.exe" -replace '\\','/'
+          New-Item -ItemType Directory -Force -Path $env:USERPROFILE/.cargo | Out-Null
+          Add-Content -Path $env:USERPROFILE/.cargo/config.toml -Value '[target.x86_64-pc-windows-gnu]'
+          Add-Content -Path $env:USERPROFILE/.cargo/config.toml -Value "linker = '$gcc'"
+
+      - name: Build CLI
+        if: "!endsWith(matrix.target, '-linux-musl')"
+        run: cargo build --release --target ${{ matrix.target }} --bin mhrv-rs
+
+      - name: Build CLI (musl via docker)
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: |
+          docker run --rm -v "$PWD":/src -w /src \
+            messense/rust-musl-cross:x86_64-musl \
+            cargo build --release --target x86_64-unknown-linux-musl --bin mhrv-rs
+          sudo chown -R "$(id -u):$(id -g)" target
+
+      - name: Build CLI (musl via docker, arm64)
+        if: matrix.target == 'aarch64-unknown-linux-musl'
+        run: |
+          docker run --rm -v "$PWD":/src -w /src \
+            messense/rust-musl-cross:aarch64-musl \
+            cargo build --release --target aarch64-unknown-linux-musl --bin mhrv-rs
+          sudo chown -R "$(id -u):$(id -g)" target
+
+      - name: Build CLI (mipsel-softfloat via docker)
+        if: matrix.target == 'mipsel-unknown-linux-musl' && matrix.mipsel_softfloat == true
+        run: |
+          set +e
+          trap 'sudo chown -R "$(id -u):$(id -g)" target 2>/dev/null || true' EXIT
+          docker run --rm -v "$PWD":/src -w /src \
+            -e RUSTFLAGS='-C target-feature=+soft-float' \
+            messense/rust-musl-cross:mipsel-musl \
+            bash -c '
+              set -eux
+              rustup toolchain uninstall nightly 2>/dev/null || true
+              rustup toolchain install nightly --profile minimal
+              rustup component add rust-src --toolchain nightly
+              cargo +nightly build --release \
+                -Z build-std=std,panic_abort \
+                --target mipsel-unknown-linux-musl \
+                --bin mhrv-rs
+            '
+          rc=$?
+          exit $rc
+
+      - name: Build UI
+        if: matrix.target != 'aarch64-unknown-linux-gnu' && matrix.target != 'arm-unknown-linux-gnueabihf' && !endsWith(matrix.target, '-linux-musl')
+        run: cargo build --release --target ${{ matrix.target }} --features ui --bin mhrv-rs-ui
+
+      - name: Package (unix)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/mhrv-rs dist/mhrv-rs
+          chmod +x dist/mhrv-rs
+          if [ -f target/${{ matrix.target }}/release/mhrv-rs-ui ]; then
+            cp target/${{ matrix.target }}/release/mhrv-rs-ui dist/mhrv-rs-ui
+            chmod +x dist/mhrv-rs-ui
+          fi
+          case "${{ matrix.target }}" in
+            *-linux-musl)
+              cp assets/openwrt/mhrv-rs.init dist/mhrv-rs.init
+              chmod +x dist/mhrv-rs.init
+              ;;
+            *)
+              cp assets/launchers/run.sh dist/run.sh
+              chmod +x dist/run.sh
+              if [ "${{ runner.os }}" = "macOS" ]; then
+                cp assets/launchers/run.command dist/run.command
+                chmod +x dist/run.command
+              fi
+              ;;
+          esac
+
+      - name: Build macOS .app bundle
+        if: runner.os == 'macOS'
+        run: |
+          VER="${{ inputs.version || github.ref_name }}"
+          VER="${VER#v}"
+          ./assets/macos/build-app.sh dist/mhrv-rs-ui "$VER" dist
+          cd dist
+          zip -qry "${{ matrix.name }}-app.zip" mhrv-rs.app
+
+      - name: Package (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item target/${{ matrix.target }}/release/mhrv-rs.exe dist/mhrv-rs.exe
+          if (Test-Path target/${{ matrix.target }}/release/mhrv-rs-ui.exe) {
+            Copy-Item target/${{ matrix.target }}/release/mhrv-rs-ui.exe dist/mhrv-rs-ui.exe
+          }
+          Copy-Item assets/launchers/run.bat dist/run.bat
+
+      - name: Make archive
+        shell: bash
+        run: |
+          cd dist
+          case "${{ matrix.target }}" in
+            *-pc-windows-*)
+              7z a -tzip "${{ matrix.name }}.zip" mhrv-rs.exe mhrv-rs-ui.exe run.bat
+              ;;
+            *-apple-darwin)
+              tar czf "${{ matrix.name }}.tar.gz" mhrv-rs mhrv-rs-ui run.sh run.command
+              ;;
+            *-linux-musl)
+              tar czf "${{ matrix.name }}.tar.gz" mhrv-rs mhrv-rs.init
+              ;;
+            *)
+              tar czf "${{ matrix.name }}.tar.gz" mhrv-rs mhrv-rs-ui run.sh 2>/dev/null || tar czf "${{ matrix.name }}.tar.gz" mhrv-rs run.sh
+              ;;
+          esac
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: |
+            dist/${{ matrix.name }}.tar.gz
+            dist/${{ matrix.name }}.zip
+            dist/${{ matrix.name }}-app.zip
+          if-no-files-found: ignore
+
+  android:
+    runs-on: ubuntu-latest
+    env:
+      ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
+      ANDROID_HOME: ${{ github.workspace }}/android-sdk
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK and NDK
+        id: android-sdk
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-34 build-tools;34.0.0 ndk;26.2.11394342'
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
+
+      # cargo-ndk is needed by the Gradle task `cargoBuildRelease`
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: android-universal
+          cache-bin: "false"
+          workspaces: |
+            . -> target
+
+      - name: Set up local.properties
+        run: |
+          echo "sdk.dir=${ANDROID_SDK_ROOT}" > ./android/local.properties
+
+      - name: Build release APK
+        working-directory: android
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :app:assembleRelease --no-daemon --stacktrace
+
+      - name: Rename APKs with version
+        working-directory: android
+        run: |
+          VER="${{ inputs.version || github.ref_name }}"
+          VER="${VER#v}"
+          mkdir -p ../dist
+
+          declare -A ABI_TO_OUTNAME=(
+            ["universal"]="mhrv-rs-android-universal-v${VER}.apk"
+            ["arm64-v8a"]="mhrv-rs-android-arm64-v8a-v${VER}.apk"
+            ["armeabi-v7a"]="mhrv-rs-android-armeabi-v7a-v${VER}.apk"
+            ["x86_64"]="mhrv-rs-android-x86_64-v${VER}.apk"
+            ["x86"]="mhrv-rs-android-x86-v${VER}.apk"
+          )
+
+          missing=0
+          for abi in "${!ABI_TO_OUTNAME[@]}"; do
+            SRC="app/build/outputs/apk/release/app-${abi}-release.apk"
+            if [ -f "$SRC" ]; then
+              cp "$SRC" "../dist/${ABI_TO_OUTNAME[$abi]}"
+              ls -la "../dist/${ABI_TO_OUTNAME[$abi]}"
+            else
+              echo "::warning::missing expected APK: $SRC"
+              missing=$((missing + 1))
+            fi
+          done
+
+          if [ ! -f "../dist/mhrv-rs-android-universal-v${VER}.apk" ]; then
+            echo "::error::universal APK missing; actual outputs:"
+            find app/build/outputs/apk -type f -name '*.apk' -print
+            exit 1
+          fi
+          if [ "$missing" -gt 0 ]; then
+            echo "::warning::$missing per-ABI APK(s) missing; continuing with universal + whatever built"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mhrv-rs-android-universal
+          path: dist/*.apk
+          if-no-files-found: error
+
+  tunnel-docker:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute version
+        id: ver
+        run: |
+          VER="${{ inputs.version || github.ref_name }}"
+          VER="${VER#v}"
+          MINOR="${VER%.*}"
+          echo "version=${VER}" >> "$GITHUB_OUTPUT"
+          echo "minor=${MINOR}" >> "$GITHUB_OUTPUT"
+          echo "Building docker for v${VER} (minor: ${MINOR})"
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./tunnel-node
+          file: ./tunnel-node/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/mhrv-tunnel-node:${{ steps.ver.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/mhrv-tunnel-node:${{ steps.ver.outputs.minor }}
+            ${{ github.event_name == 'push' && format('ghcr.io/{0}/mhrv-tunnel-node:latest', github.repository_owner) || '' }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  release:
+    needs: [build, android]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all build artifacts (with retries)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p dist
+          for attempt in 1 2 3; do
+            if gh run download "${GITHUB_RUN_ID}" --dir dist --repo "${GITHUB_REPOSITORY}"; then
+              echo "downloaded all artifacts on attempt $attempt"
+              find dist -type f -mindepth 2 -exec mv -f {} dist/ \;
+              find dist -type d -empty -delete
+              ls -la dist/
+              exit 0
+            fi
+            echo "download attempt $attempt failed; retrying in 30s..."
+            sleep 30
+          done
+          echo "::error::failed to download artifacts after 3 attempts"
+          exit 1
+
+      - name: Compose release body
+        id: relbody
+        run: |
+          VER="${{ inputs.version || github.ref_name }}"
+          VER="${VER#v}"
+          CHANGELOG="docs/changelog/v${VER}.md"
+          if [ ! -f "$CHANGELOG" ]; then
+            echo "::warning::no changelog at $CHANGELOG; release body will fall back to generate_release_notes only"
+            echo "has_changelog=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          {
+            echo 'body<<__RELEASE_BODY_EOF__'
+            CHANGELOG_PATH="$CHANGELOG" python3 - <<'PY'
+          import os, re, pathlib
+          body = pathlib.Path(os.environ["CHANGELOG_PATH"]).read_text(encoding="utf-8")
+          print(re.sub(r"^\s*(?:<!--.*?-->\s*)+", "", body, count=1, flags=re.S), end="")
+          PY
+            echo
+            echo '__RELEASE_BODY_EOF__'
+          } >> "$GITHUB_OUTPUT"
+          echo "has_changelog=true" >> "$GITHUB_OUTPUT"
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.version && format('v{0}', inputs.version) || github.ref_name }}
+          files: dist/*
+          body: ${{ steps.relbody.outputs.body }}
+          append_body: true
+          generate_release_notes: true
+
+  commit-releases:
+    needs: [build, android, release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Download artifacts from the GitHub Release page
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VER="${{ inputs.version || github.ref_name }}"
+          VER="${VER#v}"
+          mkdir -p artifacts
+          gh release download "v${VER}" \
+            --repo "${{ github.repository }}" \
+            --dir artifacts \
+            --pattern '*.tar.gz' \
+            --pattern '*.zip' \
+            --pattern '*.apk'
+          echo "--- artifacts/ contents ---"
+          ls -la artifacts/
+
+      - name: Refresh releases/ folder
+        run: |
+          set -euo pipefail
+          VER="${{ inputs.version || github.ref_name }}"
+          VER="${VER#v}"
+
+          mkdir -p releases
+          find releases -maxdepth 1 -type f \
+            \( -name '*.apk' -o -name '*.tar.gz' -o -name '*.zip' \) \
+            -delete
+
+          for f in artifacts/*.tar.gz artifacts/*.zip; do
+            [ -f "$f" ] || continue
+            cp "$f" "releases/$(basename "$f")"
+          done
+
+          for f in artifacts/mhrv-rs-android-*.apk; do
+            [ -f "$f" ] || continue
+            cp "$f" "releases/$(basename "$f")"
+          done
+
+          if [ -f releases/README.md ]; then
+            sed -i.bak \
+              -e "s/Current version: \*\*v[0-9][0-9.]*\*\*/Current version: **v${VER}**/" \
+              -e "s/نسخهٔ فعلی: \*\*v[0-9][0-9.]*\*\*/نسخهٔ فعلی: **v${VER}**/" \
+              -e "s/mhrv-rs-android-universal-v[0-9][0-9.]*\.apk/mhrv-rs-android-universal-v${VER}.apk/g" \
+              releases/README.md
+            rm -f releases/README.md.bak
+          fi
+
+          echo "--- releases/ contents after refresh ---"
+          ls -la releases/
+
+      - name: Commit + push to main
+        run: |
+          set -euo pipefail
+          VER="${{ inputs.version || github.ref_name }}"
+          VER="${VER#v}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add releases
+          if git diff --cached --quiet; then
+            echo "No releases/ changes to commit (artifacts identical to current HEAD?)."
+            exit 0
+          fi
+
+          git commit -m "chore(releases): refresh prebuilt binaries for v${VER}" \
+                     -m "Auto-committed by release workflow so users behind GitHub-Releases-page filtering can download via the in-repo releases/ folder. The GitHub Release page itself still has the canonical versioned artifacts; this folder is the fallback path for users who can only reach the static source tree (Code → Download ZIP)."
+
+          git push origin HEAD:main
