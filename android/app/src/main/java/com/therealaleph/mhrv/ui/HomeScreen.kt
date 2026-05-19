@@ -102,7 +102,6 @@ fun HomeScreen(
         onCaOutcomeConsumed()
     }
 
-    // BottomSheet
     val sheetState = rememberModalBottomSheetState()
     var showSheet by remember { mutableStateOf(false) }
 
@@ -138,11 +137,41 @@ fun HomeScreen(
                 onSnackbar = { snackbar.showSnackbar(it) }
             )
 
-            // ۳. دکمه‌ی Connect دایره‌ای (جایگزین FAB با Button)
+            // ۳. دکمه‌ی Connect دایره‌ای
             val isVpnRunning by VpnState.isRunning.collectAsState()
             val connectEnabled = (isVpnRunning ||
                     cfg.mode == Mode.DIRECT ||
                     (cfg.hasDeploymentId && cfg.authKey.isNotBlank())) && !transitioning
+
+            // روش بدون پارامتر enabled در clickable
+            val connectModifier = if (connectEnabled) {
+                Modifier.clickable {
+                    if (isVpnRunning) {
+                        awaitingRunning = false
+                        onStop()
+                    } else {
+                        awaitingRunning = true
+                        scope.launch {
+                            var updated = cfg
+                            if (updated.googleIp.isBlank()) {
+                                val fresh = withContext(Dispatchers.IO) {
+                                    NetworkDetect.resolveGoogleIp()
+                                }
+                                if (!fresh.isNullOrBlank()) updated = updated.copy(googleIp = fresh)
+                            }
+                            if (updated.frontDomain.isBlank() ||
+                                updated.frontDomain.parseAsIpOrNull() != null
+                            ) {
+                                updated = updated.copy(frontDomain = "www.google.com")
+                            }
+                            if (updated !== cfg) persist(updated)
+                            onStart()
+                        }
+                    }
+                }
+            } else {
+                Modifier
+            }
 
             Box(
                 modifier = Modifier
@@ -150,30 +179,7 @@ fun HomeScreen(
                     .shadow(12.dp, CircleShape, spotColor = NeonGreen, ambientColor = NeonGreen)
                     .clip(CircleShape)
                     .background(if (isVpnRunning) Color(0xFFFF5252) else NeonGreen)
-                    .clickable(enabled = connectEnabled) {
-                        if (isVpnRunning) {
-                            awaitingRunning = false
-                            onStop()
-                        } else {
-                            awaitingRunning = true
-                            scope.launch {
-                                var updated = cfg
-                                if (updated.googleIp.isBlank()) {
-                                    val fresh = withContext(Dispatchers.IO) {
-                                        NetworkDetect.resolveGoogleIp()
-                                    }
-                                    if (!fresh.isNullOrBlank()) updated = updated.copy(googleIp = fresh)
-                                }
-                                if (updated.frontDomain.isBlank() ||
-                                    updated.frontDomain.parseAsIpOrNull() != null
-                                ) {
-                                    updated = updated.copy(frontDomain = "www.google.com")
-                                }
-                                if (updated !== cfg) persist(updated)
-                                onStart()
-                            }
-                        }
-                    },
+                    .then(connectModifier),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
@@ -184,7 +190,7 @@ fun HomeScreen(
                 )
             }
 
-            // ۴. نوار Follow Channel (نئونی)
+            // ۴. نوار Follow Channel
             Button(
                 onClick = { showSheet = true },
                 colors = ButtonDefaults.buttonColors(
@@ -203,7 +209,7 @@ fun HomeScreen(
         }
     }
 
-    // ---------- دیالوگ نصب CA ----------
+    // دیالوگ نصب CA
     if (showInstallDialog) {
         val exported = remember { CaInstall.export(ctx) }
         val fp = remember(exported) { if (exported) CaInstall.fingerprint(ctx) else null }
@@ -262,7 +268,7 @@ fun HomeScreen(
         )
     }
 
-    // ---------- برگه‌ی کشویی Follow Channel ----------
+    // برگه‌ی کشویی
     if (showSheet) {
         ModalBottomSheet(
             onDismissRequest = { showSheet = false },
